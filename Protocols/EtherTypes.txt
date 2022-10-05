@@ -15,3 +15,4 @@
 8848:MPLS with upstream-assigned label
 8863:PPPoE Discovery Stage
 8864:PPPoE Session Stage
+88cc:802.1 Link Layer Discovery Protocol (LLDP)
