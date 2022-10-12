@@ -11,8 +11,6 @@ source_constant = 12
 protocol_constant = 24
 length_constant = 28
 
-frame_jump = 0
-
 frames_database = {"name": "PKS2022/23", "pcap_name": pcap_name, "packets": []}
 
 
@@ -56,8 +54,8 @@ def modify_ethernet_object(packet_length, packet_object):
     return packet_object
 
 
-def modify_iee_llc(packet, packet_object):
-    dsap_offset = 28
+def modify_iee_llc(packet, packet_object, offset = 0):
+    dsap_offset = 28 + offset
     # dsap_num = packet[dsap_offset : dsap_offset + 2]
     ssap_num = packet[dsap_offset + 2 : dsap_offset + 4]
 
@@ -69,17 +67,13 @@ def modify_iee_llc(packet, packet_object):
 
     return packet_object
 
-def modify_iee_llc_snap(packet, packet_object):
-    pid_offset = 40 + frame_jump
+def modify_iee_llc_snap(packet, packet_object, offset = 0):
+    pid_offset = 40 + offset
     pid_num = packet[pid_offset:pid_offset+4]
     try:
         pid = f"{pidTypes[pid_num]}".strip()
     except:
-        try:
-            pid_num = packet[92:92+4]
-            pid = f"{pidTypes[pid_num]}".strip()
-        except:
-            pid = pid_num;
+        pid = pid_num;
         
     packet_object["pid"] = pid;
 
@@ -141,14 +135,14 @@ def analyze_frames(pcap_file = pcap_name):
                 packet_length=packet_length, packet_object=packet_object
             )
         elif frame_type == "IEEE 802.3 LLC":
-            packet_object = modify_iee_llc(packet=packet, packet_object=packet_object)
+            packet_object = modify_iee_llc(packet=packet, packet_object=packet_object, offset = frame_jump)
         elif frame_type == "IEEE 802.3 LLC & SNAP":
-           packet_object = modify_iee_llc_snap(packet=packet, packet_object=packet_object)
+           packet_object = modify_iee_llc_snap(packet=packet, packet_object=packet_object, offset = frame_jump)
 
         packet_object["hexa_frame"] = ruamel.yaml.scalarstring.LiteralScalarString(
             prettify_hex_data(packet)
         )
-        # if frame_type != "Ethernet II":
+
         frames_database["packets"].append(packet_object)
 
     # YAML formatting and print
