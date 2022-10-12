@@ -2,13 +2,16 @@ from scapy.all import rdpcap
 from scapy.compat import raw
 import ruamel.yaml.scalarstring
 
-pcap_name = "eth-2.pcap"
+pcap_name = "trace-26.pcap"
 etherTypes = {}
 SapTypes = {}
+pidTypes = {}
 
 source_constant = 12
 protocol_constant = 24
 length_constant = 28
+
+frame_jump = 0
 
 frames_database = {"name": "PKS2022/23", "pcap_name": pcap_name, "packets": []}
 
@@ -16,6 +19,7 @@ frames_database = {"name": "PKS2022/23", "pcap_name": pcap_name, "packets": []}
 def load_dictionaries():
     etherTypesF = open("Protocols/EtherTypes.txt", "r")
     sapTypesF = open("Protocols/SAP.txt", "r")
+    pidTypesF = open("Protocols/PID.txt", "r")
     for line in etherTypesF:
         splitLine = line.split(":")
         if len(splitLine) > 1:
@@ -24,6 +28,10 @@ def load_dictionaries():
         splitLine = line.split(":")
         if len(splitLine) > 1:
             SapTypes[splitLine[0]] = splitLine[1]
+    for line in pidTypesF:
+        splitLine = line.split(":")
+        if len(splitLine) > 1:
+            pidTypes[splitLine[0]] = splitLine[1]
 
 
 def prettify_hex_data(hex_packet):
@@ -45,30 +53,37 @@ def modify_ethernet_object(packet_length, packet_object):
     except:
         ether_type = "Unknown"
     # packet_object["ether_type"] = ether_type
-    # addatt(packet_object, "ether_type",ether_type);
-
     return packet_object
 
 
 def modify_iee_llc(packet, packet_object):
     dsap_offset = 28
-    dsap_num = packet[dsap_offset : dsap_offset + 2]
+    # dsap_num = packet[dsap_offset : dsap_offset + 2]
     ssap_num = packet[dsap_offset + 2 : dsap_offset + 4]
-
-    try:
-        dsap = f"{SapTypes[dsap_num]}".strip()
-    except:
-        dsap = dsap_num
 
     try:
         ssap = f"{SapTypes[ssap_num]}".strip()
     except:
         ssap = ssap_num
-    # packet_object["dsap"] = dsap
-    if ssap != "SNAP":
-        packet_object["sap"] = ssap
+    packet_object["sap"] = ssap
 
     return packet_object
+
+def modify_iee_llc_snap(packet, packet_object):
+    pid_offset = 40 + frame_jump
+    pid_num = packet[pid_offset:pid_offset+4]
+    try:
+        pid = f"{pidTypes[pid_num]}".strip()
+    except:
+        try:
+            pid_num = packet[92:92+4]
+            pid = f"{pidTypes[pid_num]}".strip()
+        except:
+            pid = pid_num;
+        
+    packet_object["pid"] = pid;
+
+    return packet_object;
 
 
 load_dictionaries()
@@ -79,13 +94,23 @@ def analyze_frames(pcap_file = pcap_name):
     length = len(packets)
     frames_database = {"name": "PKS2022/23", "pcap_name": pcap_name, "packets": []}
 
+
     for i in range(length):
         packet = raw(packets[i]).hex()
-        packet_length = packet[24 : 24 + 4]
-        packet_type_length = packet[length_constant : length_constant + 4]
 
-        dest_mac = f"{packet[0:2]}:{packet[2:4]}:{packet[4:6]}:{packet[6:8]}:{packet[8:10]}:{packet[10:12]}".upper()
-        dest_src = f"{packet[source_constant:source_constant+2]}:{packet[source_constant+2:source_constant+4]}:{packet[source_constant+4:source_constant+6]}:{packet[source_constant+6:source_constant+8]}:{packet[source_constant+8:source_constant+10]}:{packet[source_constant+10:source_constant+12]}".upper()
+        #check if is ISL present
+        isl_mac_test = f"{packet[0:2]}:{packet[2:4]}:{packet[4:6]}:{packet[6:8]}:{packet[8:10]}:{packet[10:12]}"
+        if isl_mac_test == "01:00:0c:00:00:00" or isl_mac_test == "03:00:0c:00:00:00":
+            frame_jump = 52
+        else:
+            frame_jump = 0
+
+        packet_length = packet[24 + frame_jump: 24 + 4 + frame_jump]
+        packet_type_length = packet[length_constant + frame_jump : length_constant + 4 + frame_jump]
+
+        dest_mac = f"{packet[0+frame_jump:2+frame_jump]}:{packet[2+frame_jump:4+frame_jump]}:{packet[4+frame_jump:6+frame_jump]}:{packet[6+frame_jump:8+frame_jump]}:{packet[8+frame_jump:10+frame_jump]}:{packet[10+frame_jump:12+frame_jump]}".upper()
+        source_position = source_constant + frame_jump;
+        dest_src = f"{packet[source_position:source_position+2]}:{packet[source_position+2:source_position+4]}:{packet[source_position+4:source_position+6]}:{packet[source_position+6:source_position+8]}:{packet[source_position+8:source_position+10]}:{packet[source_position+10:source_position+12]}".upper()
 
         real_frame_length = int(len(packet) / 2)
         if real_frame_length < 60:
@@ -103,7 +128,7 @@ def analyze_frames(pcap_file = pcap_name):
             frame_type = "IEEE 802.3 LLC"
 
         packet_object = {
-            "frame_number": i,
+            "frame_number": i+1,
             "frame_type": frame_type,
             "len_frame_pcap": real_frame_length,
             "len_frame_medium": len_frame_medium,
@@ -115,8 +140,10 @@ def analyze_frames(pcap_file = pcap_name):
             packet_object = modify_ethernet_object(
                 packet_length=packet_length, packet_object=packet_object
             )
-        elif frame_type == "IEEE 802.3 LLC & SNAP" or frame_type == "IEEE 802.3 LLC":
+        elif frame_type == "IEEE 802.3 LLC":
             packet_object = modify_iee_llc(packet=packet, packet_object=packet_object)
+        elif frame_type == "IEEE 802.3 LLC & SNAP":
+           packet_object = modify_iee_llc_snap(packet=packet, packet_object=packet_object)
 
         packet_object["hexa_frame"] = ruamel.yaml.scalarstring.LiteralScalarString(
             prettify_hex_data(packet)

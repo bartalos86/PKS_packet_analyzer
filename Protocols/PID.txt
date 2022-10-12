@@ -1,0 +1,4 @@
+2000:CDP
+2004:DTP
+809b:AppleTalk
+010b:PVSTP+
