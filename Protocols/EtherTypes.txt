@@ -1,9 +1,9 @@
 0200:XEROX PUP
 0201:PUP Addr Trans
-0800:Internet IP (IPv4)
+0800:IPv4
 0801:X.75 Internet
 0805:X.25 Level 3
-0806:ARP (Adress Resolution Protocol)
+0806:ARP
 8035:Reversed ARP
 809b:Appletalk
 80f3:Apple Talk AARP (Kinetics)

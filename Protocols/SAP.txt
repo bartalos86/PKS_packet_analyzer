@@ -1,32 +1,16 @@
 00:Null LSAP
-02:Individual LLC Sublayer Mgt
-03:Group LLC Sublayer Mgt
-04:SNA Path Control (individual)
-05:SNA Path Control (group)
-06:Reserved for DoD IP
-0e:ProWay-LAN
-18:Texas Instruments
-42:IEEE 802.1 Bridge Spanning Tree Protocol
-4e:EIA-RS 511
+02:Individual LLC Sublayer Management
+03:Group LLC Sublayer Management
+06:IP (Dod Internet Protocol)
+0e:PROWAY (IEC 955) Network Management, Maintenance and Installation
+42:STP
+4e:MMS (Manufacturing Message Service) EIA-RS 511
 5e:ISI IP
-7e:ISO 8208 (X.25 over IEEE 802.2 Type LLC)
-80:Xerox Network Systems (XNS)
-82:BACnet/Ethernet
-86:Nestar
-8e:ProWay-LAN (IEC 955)
-98:ARPANET Address Resolution Protocol (ARP)
-a6:RDE (route determination entity)
-aa:SNAP Extension Used
-bc:Banyan Vines
-e0:Novell NetWare
-f0:IBM NetBIOS
-f4:IBM LAN Management (individual)
-f5:IBM LAN Management (group)
-f8:IBM Remote Program Load (RPL)
-fa:Ungermann-Bass
-fe:OSI protocols ISO CLNS IS 8473
-ff:Global DSAP (broadcast to all)
-2000:CDP
-2004:DTP
-010b:PVSTP+
-809b:AppleTalk
+7e:X.25 PLP (ISO 8208)
+8e:PROWAY (IEC 955) Active Station List Maintenance
+aa:SNAP
+e0:IPX
+f0:NETBIOS
+f4:LAN Management
+fe:ISO Network Layer Protocol
+ff:Global DSAP
