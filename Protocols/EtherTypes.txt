@@ -12,8 +12,8 @@
 86dd:IPv6
 880b:PPP
 8847:MPLS
-88CC:LLDP
+88cc:LLDP
 8848:MPLS with upstream-assigned label
 8863:PPPoE Discovery Stage
 8864:PPPoE Session Stage
-88cc:802.1 Link Layer Discovery Protocol (LLDP)
+9000:ECTP

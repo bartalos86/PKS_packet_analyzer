@@ -2,7 +2,7 @@ import os
 import main
 
 pacaps = os.listdir("Captures")
-schema = "schema-task-1.yaml"
+schema = "schema-all.yaml"
 
 for i in range(len(pacaps)):
     pcap = pacaps[i]
