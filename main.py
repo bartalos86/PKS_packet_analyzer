@@ -104,7 +104,7 @@ def analyze_frames(pcap_file = pcap_name):
 
         dest_mac = f"{packet[0+frame_jump:2+frame_jump]}:{packet[2+frame_jump:4+frame_jump]}:{packet[4+frame_jump:6+frame_jump]}:{packet[6+frame_jump:8+frame_jump]}:{packet[8+frame_jump:10+frame_jump]}:{packet[10+frame_jump:12+frame_jump]}".upper()
         source_position = source_constant + frame_jump;
-        dest_src = f"{packet[source_position:source_position+2]}:{packet[source_position+2:source_position+4]}:{packet[source_position+4:source_position+6]}:{packet[source_position+6:source_position+8]}:{packet[source_position+8:source_position+10]}:{packet[source_position+10:source_position+12]}".upper()
+        src_mac = f"{packet[source_position:source_position+2]}:{packet[source_position+2:source_position+4]}:{packet[source_position+4:source_position+6]}:{packet[source_position+6:source_position+8]}:{packet[source_position+8:source_position+10]}:{packet[source_position+10:source_position+12]}".upper()
 
         real_frame_length = int(len(packet) / 2)
         if real_frame_length < 60:
@@ -126,8 +126,8 @@ def analyze_frames(pcap_file = pcap_name):
             "frame_type": frame_type,
             "len_frame_pcap": real_frame_length,
             "len_frame_medium": len_frame_medium,
-            "src_mac": dest_mac,
-            "dst_mac": dest_src,
+            "dst_mac": dest_mac,
+            "src_mac": src_mac,
         }
 
         if frame_type == "Ethernet II":
