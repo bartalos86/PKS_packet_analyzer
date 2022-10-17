@@ -1,10 +1,10 @@
-from queue import Empty
+from copy import deepcopy
 from scapy.all import rdpcap
 from scapy.compat import raw
 import ruamel.yaml.scalarstring
 import sys
 
-pcap_name = "trace-27.pcap"
+pcap_name = "trace-26.pcap"
 
 dictionaries = {
     "etherTypes": {},
@@ -94,6 +94,8 @@ def modify_ethernet_object(
     protocol_offset = 46 + offset
     port_offset = 68 + offset
     packet_object = packet_object
+    is_filtering = filter != ""
+
     try:
         ether_type = f"{dictionaries['etherTypes'][str(packet_length)]}".strip()
         packet_object["ether_type"] = ether_type
@@ -138,17 +140,30 @@ def modify_ethernet_object(
             except:
                 app_protocol = ""
     
-    # if ether_type == "ARP":
+    if ether_type == "ARP":
+        arp_ip_offset = 56 + offset
+        arp_dst_ip_offset = 76 + offset
+        arpcode_offset = 40 + offset
+        src_ip = f"{int(packet[arp_ip_offset:arp_ip_offset+2],base=16)}.{int(packet[arp_ip_offset+2:arp_ip_offset+4],base=16)}.{int(packet[arp_ip_offset+4:arp_ip_offset+6],base=16)}.{int(packet[arp_ip_offset+6:arp_ip_offset+8],base=16)}"
+        dst_ip = f"{int(packet[arp_dst_ip_offset:arp_dst_ip_offset+2],base=16)}.{int(packet[arp_dst_ip_offset+2:arp_dst_ip_offset+4],base=16)}.{int(packet[arp_dst_ip_offset+4:arp_dst_ip_offset+6],base=16)}.{int(packet[arp_dst_ip_offset+6:arp_dst_ip_offset+8],base=16)}"
+        arpcode = int(packet[arpcode_offset:arpcode_offset+4],base=16)
+        packet_object["src_ip"] = src_ip
+        packet_object["dst_ip"] = dst_ip
+        if arpcode == 1:
+            packet_object["arp_opcode"] = "REQUEST"
+        else:
+            packet_object["arp_opcode"] = "REPLY"
 
 
-    if filter != "" and (filter_type == "TCP" or filter_type == "UDP"):
+
+    if is_filtering and (filter_type == "TCP" or filter_type == "UDP"):
         property_to_filter = "app_protocol";
-    elif filter != "" and filter_type == "Ether":
+    elif is_filtering and filter_type == "Ether":
         property_to_filter = "ether_type"
     else:
         property_to_filter = "protocol"
     
-    if filter != "":
+    if is_filtering:
         try:
             if packet_object[property_to_filter] != filter:
                 return None
@@ -184,6 +199,90 @@ def modify_iee_llc_snap(packet, packet_object, offset=0):
 
     return packet_object
 
+def export_data_to_yaml(data, file_name):
+    # YAML formatting and print
+    yaml = ruamel.yaml.YAML()
+    yaml.default_flow_style = False
+    yaml.sort_keys = False
+    yaml.explicit_start = True
+    yaml.indent(sequence=4, offset=2)
+    yaml_file_name = file_name
+    with open(f"outputs/{yaml_file_name}.yaml", "w") as f:
+        file = yaml.dump(data, f)
+
+
+def filter_frames_arp(frames_database):
+    return_frames = {
+        "name": frames_database["name"],
+        "pcap_name": frames_database["pcap_name"],
+        "filter_name": "ARP",
+        "complete_comms": [],
+        "partial_comms": []
+    }
+    packet_range = range(len(frames_database["packets"]))
+    i = 0
+    not_added_packets = []
+    while i < len(frames_database["packets"]):
+        packet = frames_database["packets"][i]
+        dst_ip = packet["dst_ip"]
+        src_ip = packet["src_ip"]
+        if packet["arp_opcode"] == "REQUEST":
+            response_found = False
+            for j in range(i,len(frames_database["packets"])):
+                sub_packet = frames_database["packets"][j]
+                if sub_packet["arp_opcode"] == "REPLY" and sub_packet["src_ip"] == dst_ip and sub_packet["dst_ip"] == src_ip:
+                    
+                    if sub_packet in not_added_packets:
+                        not_added_packets.remove(sub_packet)
+
+                    return_frames["complete_comms"].append({
+                        "number_comm": len(return_frames["complete_comms"]) +1,
+                        "src_comm": src_ip,
+                        "dst_comm": dst_ip,
+                        "packets": [deepcopy(packet),deepcopy(sub_packet)]
+                    })
+                    response_found = True
+                    frames_database["packets"].remove(sub_packet)
+                    break;
+                elif sub_packet["arp_opcode"] == "REPLY":
+                    if sub_packet not in not_added_packets:
+                        not_added_packets.append(sub_packet)
+
+            if not response_found:
+                return_frames["partial_comms"].append({
+                    "number_comm": len(return_frames["partial_comms"]) +1,
+                    "packets": [deepcopy(packet)]
+                })
+
+        i = i+1
+
+
+    for packet in not_added_packets:
+            return_frames["partial_comms"].append({
+                    "number_comm": len(return_frames["partial_comms"]) +1,
+                    "packets": [deepcopy(packet)]
+                })  
+    
+    #Corecct the ordering
+    def sorting_func(comm):
+        return comm["packets"][0]["frame_number"]
+    #Correct only if reply packet has been appended to the end           
+    if len(not_added_packets) > 0:                
+        return_frames["partial_comms"].sort(key=sorting_func)
+        for i in range(len(return_frames["partial_comms"])):
+            return_frames["partial_comms"][i]["number_comm"] = i+1
+
+
+    if len( return_frames["partial_comms"]) == 0:
+        return_frames["partial_comms"] = None
+
+    if len( return_frames["complete_comms"]) == 0:
+        return_frames["complete_comms"] = None
+   
+
+    return return_frames
+
+
 
 def analyze_frames(pcap_file=pcap_name, filter="", filter_type=""):
     pcap_name = pcap_file
@@ -191,6 +290,7 @@ def analyze_frames(pcap_file=pcap_name, filter="", filter_type=""):
     ipv4_history = {}
     length = len(packets)
     frames_database = {"name": "PKS2022/23", "pcap_name": pcap_name, "packets": []}
+    is_filtering = filter != ""
 
     for i in range(length):
         packet = raw(packets[i]).hex()
@@ -266,7 +366,7 @@ def analyze_frames(pcap_file=pcap_name, filter="", filter_type=""):
 
 
     #If filtering is present do not add statistics
-    if filter == "":
+    if not is_filtering:
         frames_database["ipv4_senders"] = []
         for node in ipv4_history:
             frames_database["ipv4_senders"].append(
@@ -279,18 +379,22 @@ def analyze_frames(pcap_file=pcap_name, filter="", filter_type=""):
             ipv4_history=ipv4_history
         )
 
-    # YAML formatting and print
-    yaml = ruamel.yaml.YAML()
-    yaml.default_flow_style = False
-    yaml.sort_keys = False
-    yaml_file_name = pcap_name.strip(".pcap")
-    with open(f"outputs/{yaml_file_name}.yaml", "w") as f:
-        file = yaml.dump(frames_database, f)
+    if not is_filtering:
+        export_data_to_yaml(frames_database, pcap_name.strip(".pcap"))
+    elif filter == "ARP":
+        frames_database["filter_name"] = "ARP"
+        frames_database = filter_frames_arp(frames_database)
+        export_data_to_yaml(frames_database, pcap_name.strip(".pcap"))
+
 
 
 # Argument start
-if len(sys.argv) == 3:
+if len(sys.argv) >= 3:
     filter = sys.argv[2]
+    try:
+        pcap = sys.argv[3]
+    except:
+        pcap = None
     print(filter)
     filter_type = "IP"
     if sys.argv[1] != "-p":
@@ -310,6 +414,10 @@ if len(sys.argv) == 3:
             elif key == "etherTypes":
                 filter_type = "Ether"
             break
-    analyze_frames(filter=filter, filter_type=filter_type)
+    if pcap != None:
+        print(pcap)
+        analyze_frames(pcap_file=pcap,filter=filter, filter_type=filter_type)
+    else:
+        analyze_frames(filter=filter, filter_type=filter_type)
 else:
     analyze_frames()
