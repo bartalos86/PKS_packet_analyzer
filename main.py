@@ -93,7 +93,7 @@ def modify_ethernet_object(
     ip_offset = 52 + offset
     protocol_offset = 46 + offset
     port_offset = 68 + offset
-    packet_object = {}
+    packet_object = packet_object
     try:
         ether_type = f"{dictionaries['etherTypes'][str(packet_length)]}".strip()
         packet_object["ether_type"] = ether_type
@@ -137,10 +137,20 @@ def modify_ethernet_object(
                 packet_object["app_protocol"] = app_protocol
             except:
                 app_protocol = ""
+    
+    # if ether_type == "ARP":
 
-    if filter != "" and filter_type == "TCP":
+
+    if filter != "" and (filter_type == "TCP" or filter_type == "UDP"):
+        property_to_filter = "app_protocol";
+    elif filter != "" and filter_type == "Ether":
+        property_to_filter = "ether_type"
+    else:
+        property_to_filter = "protocol"
+    
+    if filter != "":
         try:
-            if packet_object["app_protocol"] != filter:
+            if packet_object[property_to_filter] != filter:
                 return None
         except:
             return None
@@ -207,6 +217,7 @@ def analyze_frames(pcap_file=pcap_name, filter="", filter_type=""):
         else:
             len_frame_medium = real_frame_length + 4
 
+        #Classify packet type
         if int(packet_length, base=16) > 1500:
             frame_type = "Ethernet II"
         elif packet_type_length == "aaaa":
@@ -243,28 +254,30 @@ def analyze_frames(pcap_file=pcap_name, filter="", filter_type=""):
             packet_object = modify_iee_llc_snap(
                 packet=packet, packet_object=packet_object, offset=frame_jump
             )
-        else:
+        elif filter != "":
             packet_object = None
 
-        if packet_object:
+        #Only add packet if not null
+        if packet_object != None:
             packet_object["hexa_frame"] = ruamel.yaml.scalarstring.LiteralScalarString(
                 prettify_hex_data(packet)
             )
-
-        if packet_object:
             frames_database["packets"].append(packet_object)
 
-    frames_database["ipv4_senders"] = []
-    for node in ipv4_history:
-        frames_database["ipv4_senders"].append(
-            {
-                "node": node,
-                "number_of_sent_packets": ipv4_history[node]["number_of_sent_packets"],
-            }
+
+    #If filtering is present do not add statistics
+    if filter == "":
+        frames_database["ipv4_senders"] = []
+        for node in ipv4_history:
+            frames_database["ipv4_senders"].append(
+                {
+                    "node": node,
+                    "number_of_sent_packets": ipv4_history[node]["number_of_sent_packets"],
+                }
         )
-    frames_database["max_send_packets_by"] = find_max_sent_packets(
-        ipv4_history=ipv4_history
-    )
+        frames_database["max_send_packets_by"] = find_max_sent_packets(
+            ipv4_history=ipv4_history
+        )
 
     # YAML formatting and print
     yaml = ruamel.yaml.YAML()
@@ -278,6 +291,7 @@ def analyze_frames(pcap_file=pcap_name, filter="", filter_type=""):
 # Argument start
 if len(sys.argv) == 3:
     filter = sys.argv[2]
+    print(filter)
     filter_type = "IP"
     if sys.argv[1] != "-p":
         print("Incorrect argument. Try -p")
@@ -293,6 +307,8 @@ if len(sys.argv) == 3:
                 filter_type = "TCP"
             elif key == "udpPortTypes":
                 filter_type = "UDP"
+            elif key == "etherTypes":
+                filter_type = "Ether"
             break
     analyze_frames(filter=filter, filter_type=filter_type)
 else:
