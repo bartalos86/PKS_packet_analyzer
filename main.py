@@ -211,7 +211,7 @@ def export_data_to_yaml(data, file_name):
         file = yaml.dump(data, f)
 
 
-def filter_frames_arp(frames_database):
+def filter_frames_arp(frames_database, offset = 0):
     return_frames = {
         "name": frames_database["name"],
         "pcap_name": frames_database["pcap_name"],
@@ -224,6 +224,14 @@ def filter_frames_arp(frames_database):
     not_added_packets = []
     while i < len(frames_database["packets"]):
         packet = frames_database["packets"][i]
+
+        #MAC address correction
+        packet_hexcode = packet["hexa_frame"].strip().replace(' ',"").replace('\n',"")
+        src_mac_offet = 44 + offset
+        dst_mac_offset = 64 + offset
+        frames_database["packets"][i]["src_mac"] = f"{packet_hexcode[src_mac_offet:src_mac_offet+2]}:{packet_hexcode[2+src_mac_offet:4+src_mac_offet]}:{packet_hexcode[4+src_mac_offet:6+src_mac_offet]}:{packet_hexcode[6+src_mac_offet:8+src_mac_offet]}:{packet_hexcode[8+src_mac_offet:10+src_mac_offet]}:{packet_hexcode[10+src_mac_offet:12+src_mac_offet]}"
+        frames_database["packets"][i]["dst_mac"] = f"{packet_hexcode[dst_mac_offset:dst_mac_offset+2]}:{packet_hexcode[2+dst_mac_offset:4+dst_mac_offset]}:{packet_hexcode[4+dst_mac_offset:6+dst_mac_offset]}:{packet_hexcode[6+dst_mac_offset:8+dst_mac_offset]}:{packet_hexcode[8+dst_mac_offset:10+dst_mac_offset]}:{packet_hexcode[10+dst_mac_offset:12+dst_mac_offset]}"
+
         dst_ip = packet["dst_ip"]
         src_ip = packet["src_ip"]
         if packet["arp_opcode"] == "REQUEST":
