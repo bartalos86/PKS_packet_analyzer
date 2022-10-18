@@ -4,7 +4,7 @@ import main
 pacaps = os.listdir("Captures")
 schema = "schema-all.yaml"
 
-test_protocols = ["ARP"]
+test_protocols = ["TCP"]
 
 for i in range(len(pacaps)):
     pcap = pacaps[i]
