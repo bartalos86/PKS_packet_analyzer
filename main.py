@@ -644,7 +644,7 @@ def filter_frames_icmp(frames_database, offset = 0):
             if "src_ip" not in resp_packet or "dst_ip" not in resp_packet:
                 continue
 
-            if src_ip == resp_packet["dst_ip"] and dst_ip == resp_packet["src_ip"] and "Reply" in resp_packet["icmp_type"]:
+            if src_ip == resp_packet["dst_ip"] and dst_ip == resp_packet["src_ip"] and resp_packet["icmp_type"] != None and "Reply" in resp_packet["icmp_type"]:
                 return_frames["complete_comms"].append({
                             "number_comm": len(return_frames["complete_comms"]) + 1,
                             "src_comm": src_ip,
