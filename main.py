@@ -106,7 +106,6 @@ def modify_ethernet_object(
         packet_object["ether_type"] = ether_type
     except:
         ether_type = packet_length
-        print("Unknown ethertype")
 
     if ether_type == "IPv4":
         src_ip = f"{int(packet[ip_offset:ip_offset+2],base=16)}.{int(packet[ip_offset+2:ip_offset+4],base=16)}.{int(packet[ip_offset+4:ip_offset+6],base=16)}.{int(packet[ip_offset+6:ip_offset+8],base=16)}"
@@ -150,8 +149,12 @@ def modify_ethernet_object(
         # ICMP
         if protocol == "ICMP" and filter == "ICMP":
             icmp_type_offet = 68 + offset
+            icmp_id_offset = 74 + offset
             icmp_code = int(
                 packet[icmp_type_offet: icmp_type_offet + 2], base=16)
+            icmp_id = int(
+                packet[icmp_id_offset: icmp_id_offset + 4], base=16)
+            packet_object["id"] = icmp_id
             try:
                 packet_object["icmp_type"] = dictionaries["icmpTypes"][str(
                     icmp_code)]
@@ -264,14 +267,16 @@ def filter_frames_tcp(frames_database, filter, offset=0):
         ack = int(hexcode[ack_offsset: ack_offsset + 8], base=16)
 
         if "app_protocol" not in packet:
-            continue
+             continue
 
         syn_packet = None
         ack_syn_packet = None
         ack_packet = None
-        end_req_packet = None
-        end_ack_packet = None
-        is_complete = False
+        end_req_packet_1 = None
+        end_ack_packet_1 = None
+        end_req_packet_2 = None
+        end_ack_packet_2 = None
+
         first_packet = -1
         last_packet = -1
         for j in range(0, len(frames_database["packets"])):
@@ -284,12 +289,9 @@ def filter_frames_tcp(frames_database, filter, offset=0):
             flags = bin(
                 int(packet_hexcode[flag_offset: flag_offset + 4], base=16)
             )[2:]
-            seq = int(packet_hexcode[seq_offset: seq_offset + 8], base=16)
-            ack_number = int(
-                packet_hexcode[ack_offsset: ack_offsset + 8], base=16)
 
             if "app_protocol" not in tcp_packet or tcp_packet["app_protocol"] != filter:
-             continue
+              continue
 
             flag_offset_pos = 0
             if len(flags) == 16:
@@ -300,125 +302,85 @@ def filter_frames_tcp(frames_database, filter, offset=0):
             is_rst = flags[12 + flag_offset_pos] == "1"
             is_fin = flags[14 + flag_offset_pos] == "1"
 
-            ips_match = ((tcp_packet["src_ip"] == src_ip
-                and tcp_packet["dst_ip"] == dst_ip)
-                or (
-                    tcp_packet["src_ip"] == dst_ip
-                    and tcp_packet["dst_ip"] == src_ip
-                )
-                )
+            ips_match = ((tcp_packet["src_ip"] == src_ip and tcp_packet["dst_ip"] == dst_ip) or (tcp_packet["src_ip"] == dst_ip and tcp_packet["dst_ip"] == src_ip))
+            ports_match = ((tcp_packet["src_port"] == src_port and tcp_packet["dst_port"] == dst_port) or (tcp_packet["src_port"] == dst_port and tcp_packet["dst_port"] == src_port))
+            is_connection_open = syn_packet != None and ack_syn_packet != None and ack_packet != None
 
-            ports_match = ((tcp_packet["src_port"] == src_port
-                and tcp_packet["dst_port"] == dst_port)
-                or
-                (
-                tcp_packet["src_port"] == dst_port
-                and tcp_packet["dst_port"] == src_port
-                ))
+            # SYN
+            if syn_packet == None and is_syn and not is_ack and ips_match and ports_match:
+                 syn_packet = deepcopy(tcp_packet)
+                 if j > i:
+                     break
+                 continue
 
-            # SYN request
-            if (
-                syn_packet == None
-
-                and is_syn
-                and not is_ack
-            ):
-                if j > i:
-                    break
-                syn_packet = deepcopy(tcp_packet)
-                syn_packet["seq"] = seq
-                continue
             # SYN ACK
-            if (
-                syn_packet != None
-                and ack_syn_packet == None
-                and ips_match
-                and is_syn
-                and is_ack
-            ):
-
+            if ack_syn_packet == None and syn_packet != None and is_syn and is_ack and ips_match and ports_match:
                 ack_syn_packet = deepcopy(tcp_packet)
-                ack_syn_packet["seq"] = seq
                 continue
-            # ACK
-            if (
-                ack_syn_packet != None
-                and ack_packet == None
-                and ports_match
-                and not is_syn
-                and is_ack
-            ):
+
+            #ACK
+            if ack_packet == None and ack_syn_packet != None and not is_syn and not is_fin and not is_rst and is_ack and ips_match and ports_match:
                 ack_packet = deepcopy(tcp_packet)
                 first_packet = j - 2
-                ack_packet["seq"] = seq
                 continue
 
-            # FIN
-            if (
-                ack_packet != None
-                and end_req_packet == None
-                and ips_match and
-                ports_match
-                and is_fin
-            ):
-                end_req_packet = deepcopy(tcp_packet)
-                end_req_packet["seq"] = seq
+            # FIN 
+            if is_connection_open and end_req_packet_1 == None and is_fin and ips_match and ports_match:
+                end_req_packet_1 = deepcopy(tcp_packet)
+                continue
+            
+            #ACK
+            if is_connection_open and end_req_packet_1 != None and end_ack_packet_1 == None and not is_syn and not is_fin and not is_rst and is_ack and ips_match and ports_match: 
+                end_ack_packet_1 =  deepcopy(tcp_packet)
                 continue
 
-            # FIN,RST ACK
-            if (
-                end_req_packet != None
-                and end_ack_packet == None
-                and ack_packet != None
-                and ips_match and
-                ports_match
-                and ((is_fin and is_ack) or is_rst or is_ack)
-            ):
-                end_ack_packet = deepcopy(tcp_packet)
-                end_ack_packet["seq"] = seq
-                is_complete = first_packet <= packet["frame_number"] and last_packet >= packet["frame_number"]
+            # FIN 
+            if is_connection_open and end_req_packet_2 == None and is_fin and ips_match:
+                end_req_packet_2 = deepcopy(tcp_packet)
                 continue
 
-            if (end_ack_packet != None) and ips_match and (is_ack):
-
-                last_packet=j
-                # if syn_packet["src_port"] != src_port:
-                #     continue
-
+            #ACK
+            if is_connection_open and end_req_packet_2 != None and end_ack_packet_2 == None and not is_syn and not is_fin and not is_rst and is_ack and ips_match and ports_match: 
+                end_ack_packet_2 =  deepcopy(tcp_packet)
+                last_packet = j + 1
                 if f"{first_packet}:{last_packet}" not in found_pairs:
-                    found_pairs[f"{first_packet}:{last_packet}"]={
-                        "src_ip": src_ip,
-                        "dst_ip": dst_ip,
-                        "src_port": src_port,
-                        "dst_port": dst_port,
-                        "first_packet": first_packet,
-                        "last_packet": last_packet,
-                    }
+                     found_pairs[f"{first_packet}:{last_packet}"]={
+                         "src_ip": src_ip,
+                         "dst_ip": dst_ip,
+                         "src_port": src_port,
+                         "dst_port": dst_port,
+                         "first_packet": first_packet,
+                         "last_packet": last_packet,
+                     }
                 break
 
-            if (
-            ack_packet != None
-                and ips_match and
-                ports_match
-                and is_rst
-            ):
-                # if syn_packet["src_port"] != src_port:
-                #     continue
-
-                last_packet=j
-                is_complete=first_packet <= packet["frame_number"] and last_packet >= packet["frame_number"]
+            # RST
+            if is_connection_open and end_ack_packet_1 != None and is_rst and ips_match and ports_match:
+                last_packet = j +1 
                 if f"{first_packet}:{last_packet}" not in found_pairs:
-                    found_pairs[str(f"{first_packet}:{last_packet}")]={
-                        "src_ip": src_ip,
-                        "dst_ip": dst_ip,
-                        "src_port": src_port,
-                        "dst_port": dst_port,
-                        "first_packet": first_packet,
-                        "last_packet": last_packet,
-                    }
+                     found_pairs[f"{first_packet}:{last_packet}"]={
+                         "src_ip": src_ip,
+                         "dst_ip": dst_ip,
+                         "src_port": src_port,
+                         "dst_port": dst_port,
+                         "first_packet": first_packet,
+                         "last_packet": last_packet,
+                     }
                 break
 
-            packet.pop("seq", None)
+            #ONLY RESET
+            if is_connection_open and end_req_packet_1 == None and end_ack_packet_1 == None and is_rst and ips_match and ports_match:
+                last_packet = j +1 
+                if f"{first_packet}:{last_packet}" not in found_pairs:
+                     found_pairs[f"{first_packet}:{last_packet}"]={
+                         "src_ip": src_ip,
+                         "dst_ip": dst_ip,
+                         "src_port": src_port,
+                         "dst_port": dst_port,
+                         "first_packet": first_packet,
+                         "last_packet": last_packet,
+                     }
+                break
 
 
     for i in range(len(frames_database["packets"])):
@@ -427,7 +389,6 @@ def filter_frames_tcp(frames_database, filter, offset=0):
         packet_hash=packet["src_ip"] + packet["dst_ip"] + \
             str(packet["src_port"]) + str(packet["dst_port"])
         for pair in found_pairs.values():
-             print(pair)
              start=int(pair["first_packet"])
              end=int(pair["last_packet"])
              commm_hash=pair["src_ip"] + pair["dst_ip"] + \
@@ -511,6 +472,7 @@ def filter_frames_udp(frames_database, offset=0):
         "complete_comms": [],
     }
     previously_added=False
+    previous_tftp=False
     comm_src_port=""
     comm_dst_port=""
     comm_src_ip=""
@@ -526,17 +488,25 @@ def filter_frames_udp(frames_database, offset=0):
             " ", "").replace("\n", "")
         opcode=int(packet_hexcode[opcode_offset:opcode_offset+4], base=16)
 
+        different =  ( (comm_src_ip != src_ip or comm_src_port != packet["src_port"]) and (comm_dst_ip != src_ip or comm_dst_port != packet["src_port"]))
+
         # TFT packet
-        if "app_protocol" in packet and packet["app_protocol"] == "TFTP":
-            print(packet["frame_number"])
+        if ("app_protocol" in packet and packet["app_protocol"] == "TFTP" or different) and not previous_tftp:
             previously_added=True
             communications.append({
                     "number_comm": len(communications) + 1,
                     "src_comm": src_ip,
                     "dst_comm": dst_ip,
-                    "packets": [deepcopy(packet)]
+                    "packets": []
                 })
-            continue
+
+            if "app_protocol" in packet and packet["app_protocol"] == "TFTP":
+                previous_tftp = True
+                if i == len(frames_database["packets"]) -1:
+                    communications[len(communications)-1]["packets"].append(packet)
+                continue
+
+            
 
         if previously_added:
             previously_added=False
@@ -544,7 +514,10 @@ def filter_frames_udp(frames_database, offset=0):
             comm_dst_ip=packet["dst_ip"]
             comm_src_port=packet["src_port"]
             comm_dst_port=packet["dst_port"]
-            comm_packet_index=1
+
+            if previous_tftp == True:
+                 communications[len(communications)-1]["packets"].append(frames_database["packets"][i-1])
+                 previous_tftp = False
 
             communications[len(communications)-1]["packets"].append(packet)
         elif not previously_added and (comm_src_ip == src_ip and comm_src_port == packet["src_port"]) or (comm_dst_ip == src_ip and comm_dst_port == packet["src_port"]):
@@ -553,11 +526,14 @@ def filter_frames_udp(frames_database, offset=0):
 
 
     for comm in communications:
-        return_frames["complete_comms"].append(comm)
+            return_frames["complete_comms"].append(comm)
+
+    if len(return_frames["complete_comms"]) == 0:
+        return_frames["complete_comms"] = None
 
     return return_frames
 
-def filter_frames_icmp(frames_database, offset=0):
+def filter_frames_icmp(frames_database):
     return_frames={
         "name": frames_database["name"],
         "pcap_name": frames_database["pcap_name"],
@@ -568,14 +544,17 @@ def filter_frames_icmp(frames_database, offset=0):
     i=0
     while i < len(frames_database["packets"]):
         packet=frames_database["packets"][i]
-        if "src_ip" not in packet or "dst_ip" not in packet:
-             i=i+1
-        #    continue
+        if "src_ip" not in packet or "dst_ip" not in packet or "icmp_type" not in packet or packet["icmp_type"] == None or "Request" not in packet["icmp_type"]:
+            i=i+1
+            return_frames["partial_comms"].append({
+                        "number_comm": len(return_frames["partial_comms"]) + 1,
+                        "packets": [deepcopy(packet)],
+                })
+            continue
+
         src_ip=packet["src_ip"]
         dst_ip=packet["dst_ip"]
 
-        # src_port = packet["src_port"]
-        # dst_port = packet["dst_port"]
 
         found_pair=False
         for j in range(i, len(frames_database["packets"])):
@@ -601,6 +580,12 @@ def filter_frames_icmp(frames_database, offset=0):
                 })
 
         i=i+1
+
+    if len(return_frames["partial_comms"]) == 0:
+        return_frames["partial_comms"]=None
+
+    if len(return_frames["complete_comms"]) == 0:
+        return_frames["complete_comms"]=None
 
     return return_frames
 
@@ -814,23 +799,22 @@ def analyze_frames(pcap_file=pcap_name, filter="", filter_type=""):
     if not is_filtering:
         export_data_to_yaml(frames_database, pcap_name.strip(".pcap"))
     elif filter == "ARP":
-        print(frames_database)
-        frames_database=filter_frames_arp(frames_database)
-        export_data_to_yaml(frames_database, pcap_name.strip(".pcap"))
+        frames_database=filter_frames_arp(frames_database, offset=frame_jump)
+        export_data_to_yaml(frames_database, pcap_name.strip(".pcap")+"-" + filter)
     elif filter == "ICMP":
         frames_database=filter_frames_icmp(frames_database)
-        export_data_to_yaml(frames_database, pcap_name.strip(".pcap"))
+        export_data_to_yaml(frames_database, pcap_name.strip(".pcap")+"-" + filter)
     elif filter_type == "TCP" or filter == "TCP":
         frames_database=filter_frames_tcp(
             frames_database=frames_database, filter=filter, offset=frame_jump
         )
-        export_data_to_yaml(frames_database, pcap_name.strip(".pcap"))
+        export_data_to_yaml(frames_database, pcap_name.strip(".pcap")+"-" + filter)
     elif filter_type == "UDP" or filter == "UDP":
         frames_database=filter_frames_udp(
             frames_database=frames_database, offset=frame_jump)
-        export_data_to_yaml(frames_database, pcap_name.strip(".pcap"))
+        export_data_to_yaml(frames_database, pcap_name.strip(".pcap")+"-" + filter)
     else:
-        export_data_to_yaml(frames_database, pcap_name.strip(".pcap"))
+        export_data_to_yaml(frames_database, pcap_name.strip(".pcap")+"-" + filter)
 
 
 # Argument start
@@ -840,7 +824,6 @@ if len(sys.argv) >= 3:
         pcap=sys.argv[3]
     except:
         pcap=None
-    print(filter)
     filter_type="IP"
     if sys.argv[1] != "-p":
         print("Incorrect argument. Try -p")
@@ -860,7 +843,6 @@ if len(sys.argv) >= 3:
                 filter_type="Ether"
             break
     if pcap != None:
-        print(pcap)
         analyze_frames(pcap_file=pcap, filter=filter, filter_type=filter_type)
     else:
         analyze_frames(filter=filter, filter_type=filter_type)
