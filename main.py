@@ -608,14 +608,9 @@ def filter_frames_udp(frames_database, offset=0):
 
 
 
-
-
-        
-    
     for comm in communications:
         return_frames["complete_comms"].append(comm)
 
-    print(return_frames)
     return return_frames
 
 def filter_frames_icmp(frames_database, offset = 0):
