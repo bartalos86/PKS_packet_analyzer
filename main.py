@@ -4,7 +4,7 @@ from scapy.compat import raw
 import ruamel.yaml.scalarstring
 import sys
 
-pcap_name = "trace-15.pcap"
+pcap_name = "trace-26.pcap"
 
 dictionaries = {
     "etherTypes": {},
@@ -143,6 +143,17 @@ def modify_ethernet_object(
                 packet_object["app_protocol"] = app_protocol
             except:
                 app_protocol = ""
+                
+        #ICMP
+        if protocol == "ICMP" and filter == "ICMP":
+            icmp_type_offet = 68 + offset
+            icmp_code = int(packet[icmp_type_offet : icmp_type_offet + 2],base=16)
+            try:
+                packet_object["icmp_type"] = dictionaries["icmpTypes"][str(icmp_code)]
+            except:
+                packet_object["icmp_type"] = None
+
+
 
     if ether_type == "ARP":
         arp_ip_offset = 56 + offset
@@ -158,13 +169,6 @@ def modify_ethernet_object(
         else:
             packet_object["arp_opcode"] = "REPLY"
 
-    if ether_type == "ICMP":
-        icmp_type_offet = 68 + offset
-        icmp_code = int(packet[icmp_type_offet : icmp_type_offet + 2])
-        try:
-            packet_object["icmp_type"] = dictionaries["icmpTypes"][str(icmp_code)]
-        except:
-            packet_object["icmp_type"] = None
 
 
     if is_filtering and filter_type == "TCP":
@@ -232,9 +236,6 @@ def export_data_to_yaml(data, file_name):
     yaml_file_name = file_name
     with open(f"outputs/{yaml_file_name}.yaml", "w") as f:
         file = yaml.dump(data, f)
-
-
-# def filter_frames_icmp(frames_database, offset = 0):
 
 
 def filter_frames_tcp(frames_database, filter, offset=0):
@@ -580,7 +581,7 @@ def filter_frames_udp(frames_database, offset=0):
         dst_ip = packet["dst_ip"]
         packet_hexcode = packet["hexa_frame"].strip().replace(" ", "").replace("\n", "")
         opcode = int(packet_hexcode[opcode_offset:opcode_offset+4],base=16)
-        
+
         #TFT packet
         if "app_protocol" in packet and packet["app_protocol"] == "TFTP":
             print(packet["frame_number"])
@@ -616,6 +617,54 @@ def filter_frames_udp(frames_database, offset=0):
 
     print(return_frames)
     return return_frames
+
+def filter_frames_icmp(frames_database, offset = 0):
+    return_frames = {
+        "name": frames_database["name"],
+        "pcap_name": frames_database["pcap_name"],
+        "filter_name": "ICMP",
+        "complete_comms": [],
+        "partial_comms": [],
+    }
+    i = 0
+    while i < len(frames_database["packets"]):
+        packet = frames_database["packets"][i]
+        if "src_ip" not in packet or "dst_ip" not in packet:
+             i = i+1
+        #    continue
+        src_ip = packet["src_ip"]
+        dst_ip = packet["dst_ip"]
+
+        # src_port = packet["src_port"]
+        # dst_port = packet["dst_port"]
+
+        found_pair = False
+        for j in range(i,len(frames_database["packets"])):
+            resp_packet = frames_database["packets"][j]
+            if "src_ip" not in resp_packet or "dst_ip" not in resp_packet:
+                continue
+
+            if src_ip == resp_packet["dst_ip"] and dst_ip == resp_packet["src_ip"] and "Reply" in resp_packet["icmp_type"]:
+                return_frames["complete_comms"].append({
+                            "number_comm": len(return_frames["complete_comms"]) + 1,
+                            "src_comm": src_ip,
+                            "dst_comm": dst_ip,
+                            "packets": [deepcopy(packet), deepcopy(resp_packet)],
+                })
+                frames_database["packets"].remove(resp_packet)
+                found_pair = True
+                break
+        
+        if not found_pair:
+            return_frames["partial_comms"].append({
+                        "number_comm": len(return_frames["partial_comms"]) + 1,
+                        "packets": [deepcopy(packet)],
+                })
+
+        i = i+1
+
+    return return_frames
+
 
 
 def filter_frames_arp(frames_database, offset=0):
@@ -828,7 +877,7 @@ def analyze_frames(pcap_file=pcap_name, filter="", filter_type=""):
         frames_database = filter_frames_arp(frames_database)
         export_data_to_yaml(frames_database, pcap_name.strip(".pcap"))
     elif filter == "ICMP":
-        #  frames_database = filter_frames_icmp(frames_database)
+        frames_database = filter_frames_icmp(frames_database)
         export_data_to_yaml(frames_database, pcap_name.strip(".pcap"))
     elif filter_type == "TCP" or filter == "TCP":
         frames_database = filter_frames_tcp(
