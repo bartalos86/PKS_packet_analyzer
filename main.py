@@ -1,5 +1,4 @@
 from copy import deepcopy
-from struct import pack
 from scapy.all import rdpcap
 from scapy.compat import raw
 import ruamel.yaml.scalarstring
@@ -167,19 +166,6 @@ def modify_ethernet_object(
         except:
             packet_object["icmp_type"] = None
 
-    # if is_filtering and (filter_type == "TCP" or filter_type == "UDP"):
-    #     property_to_filter = "app_protocol";
-    # elif is_filtering and filter_type == "Ether":
-    #     property_to_filter = "ether_type"
-    # else:
-    #     property_to_filter = "protocol"
-
-    # if is_filtering:
-    #     try:
-    #         if packet_object[property_to_filter] != filter:
-    #             return None
-    #     except:
-    #         return None
 
     if is_filtering and filter_type == "TCP":
         try:
@@ -205,12 +191,6 @@ def modify_ethernet_object(
                 return None
         except:
             return None
-    # if is_filtering and (filter_type != "TCP" and filter_type != "UDP"):
-    #     try:
-    #          if packet_object["protocol"] != filter:
-    #              return None
-    #     except:
-    #          return None
 
     return packet_object
 
@@ -335,6 +315,8 @@ def filter_frames_tcp(frames_database, filter, offset=0):
                 and is_syn
                 and not is_ack
             ):
+                if j > i:
+                    break
                 syn_packet = deepcopy(tcp_packet)
                 syn_packet["seq"] = seq
                 continue
@@ -598,12 +580,11 @@ def filter_frames_udp(frames_database, offset=0):
         dst_ip = packet["dst_ip"]
         packet_hexcode = packet["hexa_frame"].strip().replace(" ", "").replace("\n", "")
         opcode = int(packet_hexcode[opcode_offset:opcode_offset+4],base=16)
+        
         #TFT packet
         if "app_protocol" in packet and packet["app_protocol"] == "TFTP":
             print(packet["frame_number"])
             previously_added = True
-            # comm_hash = packet["src_ip"] + packet["dst_ip"] 
-            # comm_hash_reverse = packet["dst_ip"] + packet["src_ip"]
             communications.append({
                     "number_comm": len(communications) + 1,
                     "src_comm": src_ip,
@@ -627,8 +608,7 @@ def filter_frames_udp(frames_database, offset=0):
 
 
 
-        
-        
+
         
     
     for comm in communications:
