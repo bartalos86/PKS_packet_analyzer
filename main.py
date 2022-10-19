@@ -5,7 +5,7 @@ from scapy.compat import raw
 import ruamel.yaml.scalarstring
 import sys
 
-pcap_name = "eth-4.pcap"
+pcap_name = "trace-15.pcap"
 
 dictionaries = {
     "etherTypes": {},
@@ -15,6 +15,7 @@ dictionaries = {
     "udpPortTypes": {},
     "tcpPortTypes": {},
     "icmpTypes": {},
+    "tftpCodes": {}
 }
 
 source_constant = 12
@@ -53,6 +54,7 @@ def load_dictionaries():
     load_dictionary("Protocols/UDPports.txt", dictionaries["udpPortTypes"])
     load_dictionary("Protocols/TCPports.txt", dictionaries["tcpPortTypes"])
     load_dictionary("Protocols/ICMPTypes.txt", dictionaries["icmpTypes"])
+    load_dictionary("Protocols/TFTPCodes.txt", dictionaries["tftpCodes"])
 
 
 load_dictionaries()
@@ -574,7 +576,66 @@ def filter_frames_tcp(frames_database, filter, offset=0):
 
 
 def filter_frames_udp(frames_database, offset=0):
-    print("asd")
+    
+    communications = []
+    return_frames = {
+        "name": frames_database["name"],
+        "pcap_name": frames_database["pcap_name"],
+        "filter_name": "UDP",
+        "complete_comms": [],
+    }
+    previously_added = False
+    comm_src_port = ""
+    comm_dst_port = ""
+    comm_src_ip =""
+    comm_dst_ip =""
+    comm_packet_index = 0
+    opcode_offset = 84 + offset
+
+    for i in range(len(frames_database["packets"])):
+        packet = frames_database["packets"][i]
+        src_ip = packet["src_ip"]
+        dst_ip = packet["dst_ip"]
+        packet_hexcode = packet["hexa_frame"].strip().replace(" ", "").replace("\n", "")
+        opcode = int(packet_hexcode[opcode_offset:opcode_offset+4],base=16)
+        #TFT packet
+        if "app_protocol" in packet and packet["app_protocol"] == "TFTP":
+            print(packet["frame_number"])
+            previously_added = True
+            # comm_hash = packet["src_ip"] + packet["dst_ip"] 
+            # comm_hash_reverse = packet["dst_ip"] + packet["src_ip"]
+            communications.append({
+                    "number_comm": len(communications) + 1,
+                    "src_comm": src_ip,
+                    "dst_comm": dst_ip,
+                    "packets": [deepcopy(packet)]
+                })
+            continue
+
+        if previously_added:
+            previously_added = False
+            comm_src_port = packet["src_port"]
+            comm_dst_port = packet["dst_port"]
+            comm_src_ip = packet["src_ip"]
+            comm_dst_ip = packet["dst_ip"]
+            comm_packet_index = 1
+
+            communications[len(communications)-1]["packets"].append(packet)
+        elif (comm_src_ip == src_ip and comm_src_port == packet["src_port"]) or (comm_dst_ip == src_ip and comm_dst_port == packet["src_port"]):
+            communications[len(communications)-1]["packets"].append(packet)
+
+
+
+
+        
+        
+        
+    
+    for comm in communications:
+        return_frames["complete_comms"].append(comm)
+
+    print(return_frames)
+    return return_frames
 
 
 def filter_frames_arp(frames_database, offset=0):
@@ -795,7 +856,8 @@ def analyze_frames(pcap_file=pcap_name, filter="", filter_type=""):
         )
         export_data_to_yaml(frames_database, pcap_name.strip(".pcap"))
     elif filter_type == "UDP" or filter == "UDP":
-        frames_database == filter_frames_udp(frames_database=frames_database, offset=frame_jump)
+        frames_database = filter_frames_udp(frames_database=frames_database, offset=frame_jump)
+        export_data_to_yaml(frames_database, pcap_name.strip(".pcap"))
     else:
         export_data_to_yaml(frames_database, pcap_name.strip(".pcap"))
 
