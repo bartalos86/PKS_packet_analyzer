@@ -2,7 +2,5 @@ __pycache__/
 outputs/
 .vscode/
 Submit/
-examples/
-*.pdf
 ~$cumentation.docx
 *.tmp
